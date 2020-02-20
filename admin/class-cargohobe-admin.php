@@ -27,7 +27,7 @@ class Cargohobe_Admin {
 	 *
 	 * @since    1.0.0
 	 * @access   private
-	 * @var      string    $plugin_name    The ID of this plugin.
+	 * @var      string $plugin_name The ID of this plugin.
 	 */
 	private $plugin_name;
 
@@ -36,22 +36,26 @@ class Cargohobe_Admin {
 	 *
 	 * @since    1.0.0
 	 * @access   private
-	 * @var      string    $version    The current version of this plugin.
+	 * @var      string $version The current version of this plugin.
 	 */
 	private $version;
 
 	/**
 	 * Initialize the class and set its properties.
 	 *
+	 * @param string $plugin_name The name of this plugin.
+	 * @param string $version The version of this plugin.
+	 *
 	 * @since    1.0.0
-	 * @param      string    $plugin_name       The name of this plugin.
-	 * @param      string    $version    The version of this plugin.
 	 */
 	public function __construct( $plugin_name, $version ) {
 
 		$this->plugin_name = $plugin_name;
-		$this->version = $version;
+		$this->version     = $version;
 
+
+		add_action( 'admin_init', array( $this, 'cargohobe_register_settings' ) );
+		add_action( 'admin_menu', array( $this, 'cargohobe_register_options_page' ) );
 	}
 
 	/**
@@ -98,6 +102,31 @@ class Cargohobe_Admin {
 
 		wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/cargohobe-admin.js', array( 'jquery' ), $this->version, false );
 
+	}
+
+	/**
+	 * Register settings for cargohobe
+	 */
+	public function cargohobe_register_settings() {
+		add_option( 'cargohobe_option_name', 'CargoHobe Options' );
+		register_setting( 'cargohobe_options_group', 'cargohobe_option_name', 'cargohobe_callback' );
+	}
+
+	/**
+	 * Add page to the cargohobe settings menu
+	 */
+	public function cargohobe_register_options_page() {
+		add_menu_page( 'CargoHobe Options', 'CargoHobe', 'manage_options', 'cargohobe', array(
+			$this,
+			'cargohobe_options_page'
+		) );
+	}
+
+	/**
+	 * Cargohobe settings html
+	 */
+	public function cargohobe_options_page() {
+		require_once 'partials/cargohobe-admin-display.php';
 	}
 
 }

@@ -14,3 +14,8 @@
 ?>
 
 <!-- This file should primarily consist of HTML with a little bit of PHP. -->
+<div class="wrap cargohobe-options">
+    <h2>CargoHobe Options</h2>
+	<?php settings_errors(); ?>
+    <button id="send-data" class="button button-primary cargohobe-send-button">Send Data</button>
+</div>
