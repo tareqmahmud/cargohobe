@@ -50,6 +50,12 @@ class Cargohobe_Admin {
 	 * @var true|void
 	 */
 	private $interval;
+	/**
+	 * @var int
+	 */
+	private $single_shipment_time;
+
+	private $options;
 
 	/**
 	 * Initialize the class and set its properties.
@@ -64,17 +70,27 @@ class Cargohobe_Admin {
 		$this->plugin_name = $plugin_name;
 		$this->version     = $version;
 
-		// Remote Host
-		$this->remote_url = "https://darling-butcherbird-p5iy-7777.nt.run/";
-		// Data Sending Interval Time in seconds
-		$this->interval = 1 * 60;
+		/**
+		 * Default value For CargoHobe Settings
+		 */
+		$defaultOptionsValue = array(
+			"remote_url"           => "https://darling-butcherbird-p5iy-7777.nt.run",
+			"interval"             => 60,
+			"single_shipment_time" => 60,
+			"data_split"           => 10
+		);
+
+		$this->options = wp_parse_args( get_option( "cargohobe_option_name" ), $defaultOptionsValue );
 
 
+		// Trigger all the hooks
 		add_action( 'admin_init', array( $this, 'cargohobe_register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'cargohobe_register_options_page' ) );
 		add_action( "wp_ajax_cargohobe_remote_send_all_data", array( $this, 'cargohobe_cache_cron_job' ) );
 		add_action( 'cargohobe_send_all_data_event', array( $this, 'cargohobe_send_remote_data' ) );
 		add_filter( 'cron_schedules', array( $this, 'cargohobe_add_custom_schedule' ) );
+		add_action( 'save_post', array( $this, 'send_single_cargo_data_to_the_remote' ), 90, 3 );
+		add_action( 'cargohobe_send_single_data', array( $this, 'cargohobe_send_single_data_to_remote' ) );
 	}
 
 	/**
@@ -103,13 +119,47 @@ class Cargohobe_Admin {
 	public function cargohobe_register_settings() {
 		add_option( 'cargohobe_option_name', 'CargoHobe Options' );
 		register_setting( 'cargohobe_options_group', 'cargohobe_option_name', 'cargohobe_callback' );
+		add_settings_section(
+			'cargohobe_main_section', // ID
+			'CargoHobe', // Title
+			array(), // Callback
+			'cargohobe-settings-admin' // Page
+		);
+		add_settings_field(
+			'remote_url', // ID
+			'Remote URL', // Title
+			array( $this, 'cargohobe_remote_url_callback' ), // Callback
+			'cargohobe-settings-admin', // Page
+			'cargohobe_main_section' // Section
+		);
+		add_settings_field(
+			'interval', // ID
+			'Interval Time', // Title
+			array( $this, 'cargohobe_interval_callback' ), // Callback
+			'cargohobe-settings-admin', // Page
+			'cargohobe_main_section' // Section
+		);
+		add_settings_field(
+			'data_split', // ID
+			'Data Split', // Title
+			array( $this, 'cargohobe_data_split_callback' ), // Callback
+			'cargohobe-settings-admin', // Page
+			'cargohobe_main_section' // Section
+		);
+		add_settings_field(
+			'single_shipment_time', // ID
+			'New Shipment Time', // Title
+			array( $this, 'cargohobe_single_shipment_time_callback' ), // Callback
+			'cargohobe-settings-admin', // Page
+			'cargohobe_main_section' // Section
+		);
 	}
 
 	/**
 	 * Add page to the cargohobe settings menu
 	 */
 	public function cargohobe_register_options_page() {
-		add_menu_page( 'CargoHobe Options', 'CargoHobe', 'manage_options', 'cargohobe', array(
+		add_menu_page( 'CargoHobe Option', 'CargoHobe', 'manage_options', 'cargohobe', array(
 			$this,
 			'cargohobe_options_page'
 		) );
@@ -120,6 +170,72 @@ class Cargohobe_Admin {
 	 */
 	public function cargohobe_options_page() {
 		require_once 'partials/cargohobe-admin-display.php';
+	}
+
+	/**
+	 * Sanitize each setting field as needed
+	 *
+	 * @param array $input Contains all settings fields as array keys
+	 *
+	 * @return array
+	 */
+	public function sanitize( $input ) {
+		$new_input = array();
+
+		if ( isset( $input['interval'] ) ) {
+			$new_input['interval'] = absint( $input['interval'] );
+		}
+
+		if ( isset( $input['data_split'] ) ) {
+			$new_input['data_split'] = absint( $input['data_split'] );
+		}
+
+		if ( isset( $input['single_shipment_time'] ) ) {
+			$new_input['single_shipment_time'] = absint( $input['single_shipment_time'] );
+		}
+
+
+		if ( isset( $input['remote_url'] ) ) {
+			$new_input['remote_url'] = sanitize_text_field( $input['remote_url'] );
+		}
+
+		return $new_input;
+	}
+
+	// Show Remote HOST url field
+	public function cargohobe_remote_url_callback() {
+		printf(
+			'<input type="text" class="regular-text" id="remote_url" name="cargohobe_option_name[remote_url]" value="%s" />
+					<p class="description" id="tagline-description">Where the data will be sent.</p>',
+			isset( $this->options['remote_url'] ) ? esc_attr( $this->options['remote_url'] ) : ''
+		);
+	}
+
+	// Show Interval field
+	public function cargohobe_interval_callback() {
+		printf(
+			'<input type="text" class="regular-text" id="interval" name="cargohobe_option_name[interval]" value="%s" />
+					<p class="description" id="tagline-description">Interval time between per request. (In seconds)</p>',
+			isset( $this->options['interval'] ) ? esc_attr( $this->options['interval'] ) : ''
+		);
+	}
+
+	// Show data_split field
+	public function cargohobe_data_split_callback() {
+		printf(
+			'<input type="text" class="regular-text" id="interval" name="cargohobe_option_name[data_split]" value="%s" />
+					<p class="description" id="tagline-description">How much data will be sent per request</p>',
+			isset( $this->options['data_split'] ) ? esc_attr( $this->options['data_split'] ) : ''
+		);
+	}
+
+	// Show single shipment delay field
+	public function cargohobe_single_shipment_time_callback() {
+		printf(
+			'<input type="text" class="regular-text" id="single_shipment_time" name="cargohobe_option_name[single_shipment_time]" value="%s" />
+					<p class="description" id="tagline-description">Delay sending data after create a new shipment. (In Seconds)</p>',
+			isset( $this->options['single_shipment_time'] ) ? esc_attr( $this->options['single_shipment_time'] ) : ''
+		);
 	}
 
 	/**
@@ -200,12 +316,14 @@ class Cargohobe_Admin {
 		}
 	}
 
-
+	/**
+	 * Send all data to the remote server
+	 */
 	public function cargohobe_send_remote_data() {
 		// Check is all the data save on cache or not
 		$cargo_data = get_transient( "cargohobe_data" );
 		if ( $cargo_data ) {
-			$limit        = 2;
+			$limit        = $this->options["data_split"];
 			$chunk_offset = array( "offset" => 0 );
 
 			// Check is there any previous chunk offset available or not
@@ -246,7 +364,7 @@ class Cargohobe_Admin {
 	 */
 	public function cargohobe_add_custom_schedule( $schedules ) {
 		$schedules['minute'] = array(
-			'interval' => $this->interval, //7 days * 24 hours * 60 minutes * 60 seconds
+			'interval' => $this->options["interval"], //7 days * 24 hours * 60 minutes * 60 seconds
 			'display'  => __( 'Once Per Two Minute', 'cargohobe' )
 		);
 
@@ -259,12 +377,13 @@ class Cargohobe_Admin {
 	 *
 	 *
 	 * @param $data
+	 *
+	 * @return bool
 	 */
 	public function cargohobe_send_data( $data ) {
 		// Data argument
 		$args = array(
 			'method'    => 'POST',
-			'timeout'   => 100,
 			'sslverify' => false,
 			'headers'   => array(
 				'Content-Type' => 'application/json',
@@ -273,12 +392,70 @@ class Cargohobe_Admin {
 		);
 
 		// Send data to the remote server
-		$request = wp_remote_post( $this->remote_url, $args );
+		$request = wp_remote_post( $this->options["remote_url"], $args );
 
 		// If there are any errors then log it
 		if ( is_wp_error( $request ) || wp_remote_retrieve_response_code( $request ) != 200 ) {
 			log_it( $request );
+
+			return false;
 		}
+
+		// Otherwise return true
+		return true;
 	}
 
+	function send_single_cargo_data_to_the_remote( $post_id, $post, $update ) {
+		if ( $post->post_type == "wpcargo_shipment" ) {
+			if ( $post->post_status && $post->post_status == 'publish' ) {
+				// Refetch the post for maintain specific data structure
+				$args     = array(
+					'post_type' => 'wpcargo_shipment',
+					'p'         => $post_id
+				);
+				$wp_query = new WP_Query( $args );
+				if ( $wp_query->have_posts() ) {
+					// Add meta data to the wp_query objects
+					$wp_query = $this->cargohobe_add_query_meta( $wp_query );
+
+					// Check is wpcargo_shipment data save on the cache
+					$cargo_data = get_transient( "cargohobe_single_data" );
+					if ( ! $cargo_data ) {
+						// If not then save it to the cache
+						set_transient( "cargohobe_single_data", $wp_query->posts );
+					} else {
+						// If yes then add new shipment with old shipment
+						array_push( $cargo_data, $wp_query->posts );
+						delete_transient( "cargohobe_single_data" );
+						set_transient( "cargohobe_single_data", $cargo_data );
+					}
+
+					// Delete Previous Schedule Event
+					wp_clear_scheduled_hook( 'cargohobe_send_single_data' );
+
+					// Register Schedule Event For Single Data
+					wp_schedule_single_event( time() + $this->options["single_shipment_time"], 'cargohobe_send_single_data' );
+				}
+			}
+		}
+
+		return;
+	}
+
+	/**
+	 * Send Single Data To The Remote Server
+	 */
+	function cargohobe_send_single_data_to_remote() {
+		// Fetch existing data
+		// Check is all the data save on cache or not
+		$cargo_data = get_transient( "cargohobe_single_data" );
+		if ( $cargo_data ) {
+			$success = $this->cargohobe_send_data( $cargo_data );
+			if ( $success ) {
+				// If Successfully send data to the remote server then clear event and transient
+				wp_clear_scheduled_hook( 'cargohobe_send_single_data' );
+				delete_transient( "cargohobe_single_data" );
+			}
+		}
+	}
 }
